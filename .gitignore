@@ -1,0 +1,46 @@
+# --- Python / uv ---
+.venv/
+venv/
+.env/
+.env.*
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.python-version
+.uv/
+uv.lock
+
+# --- Test / tooling ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- MAME Explorer local caches ---
+.mame-explorer-cache/
+*.chd
+
+# --- Extract outputs (chdman) ---
+*.cue
+*.bin
+*.img
+*.iso
+*.raw
+*.wav
+*.toc
+*.gdi
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
