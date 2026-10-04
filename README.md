@@ -16,6 +16,7 @@ Japanese README: [`README_jp.md`](README_jp.md)
 - Properties panel for any node
 - Simple search over currently expanded (visible) nodes
 - Optional caches (`read arcade|softwarelist|romdir`) for faster re-open and real CHD candidate lookup (Tab on a Disk node)
+- **CHD mode** (`mame_explorer.py chd`): prune the tree to only branches that have a Disk present in the romdir cache
 - Automatic detection of `mame` executable and `hash/` directory from a package path (executable, directory, or archive)
 
 ## Requirements
@@ -38,6 +39,7 @@ python mame_explorer.py read arcade /path/to/mame
 python mame_explorer.py read softwarelist /path/to/mame   # or path to hash/
 python mame_explorer.py read romdir /path/to/chd/root     # optional, for real CHD checks
 python mame_explorer.py                                   # browse the caches
+python mame_explorer.py chd                               # CHD mode (requires romdir cache)
 ```
 
 See `python mame_explorer.py --usage` for copy-pasteable examples.
@@ -60,6 +62,7 @@ See `python mame_explorer.py --usage` for copy-pasteable examples.
 - Tested primarily with MAME 0.285 (Ubuntu packages). Other versions / layouts are untested.
 - Extract (CHD → image) and richer search / mediaKind handling are planned but not yet implemented.
 - Real ROM/CHD files are never required for browsing the tree; they are used only for optional verification (and future Extract).
+- `chd` mode requires a prior `read romdir` and exits with an error if the romdir cache is missing.
 
 ## License
 
