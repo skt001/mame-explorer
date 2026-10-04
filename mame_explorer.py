@@ -481,7 +481,8 @@ def draw(
     screen.addnstr(0, 0, header, width - 1)
     for i, (node, depth) in enumerate(rows[offset : offset + visible_height]):
         row = i + 1
-        marker = "+" if node.expanded else ">" if node.loader else " "
+        has_children = bool(node.loader) or (node.loaded and bool(node.children))
+        marker = "+" if node.expanded else ">" if has_children else " "
         attribute = curses.A_REVERSE if focus_mode == "tree" and offset + i == selected else curses.A_NORMAL
         screen.addnstr(row, 0, f"{'  ' * depth}{marker} {node.label}", left_width - 1, attribute)
     if show_properties and rows:
@@ -582,6 +583,9 @@ def run(screen: curses.window, roots: list[Node], rom_index: dict[str, list[str]
                     node.expanded = True
                 except Exception as error:
                     status = f"Error: {error}"
+            elif node.loaded and node.children:
+                # Pre-loaded children (e.g. CHD mode Software List nodes)
+                node.expanded = True
         elif key == curses.KEY_LEFT:
             rows[selected][0].expanded = False
         elif key in (ord("p"), ord("P")):
