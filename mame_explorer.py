@@ -462,6 +462,43 @@ def build_candidates(node: Node, rom_index: dict[str, list[str]]) -> list[dict]:
     return candidates
 
 
+def _default_extract_output(chd_path: Path, interface: str | None) -> Path:
+    """Default output path in the current directory, extension based on interface."""
+    stem = chd_path.stem
+    iface = (interface or "").lower()
+    if "hdd" in iface or "harddisk" in iface or "sasi" in iface:
+        return Path.cwd() / f"{stem}.img"
+    # cdrom and everything else: cue (chdman extractcd also writes bin)
+    return Path.cwd() / f"{stem}.cue"
+
+
+def _chdman_command(chd_path: Path, output: Path, interface: str | None) -> list[str]:
+    iface = (interface or "").lower()
+    if "hdd" in iface or "harddisk" in iface or "sasi" in iface:
+        return ["chdman", "extracthd", "-i", str(chd_path), "-o", str(output)]
+    return ["chdman", "extractcd", "-i", str(chd_path), "-o", str(output)]
+
+
+def extract_chd(chd_path: Path, output: Path, interface: str | None) -> str:
+    """Run chdman extract. Returns a short status message."""
+    if shutil.which("chdman") is None:
+        return "chdman not found (install mame-tools or MAME)."
+    if not chd_path.is_file():
+        return f"CHD not found: {chd_path}"
+    if output.exists():
+        return f"Output exists, refuse to overwrite: {output}"
+    cmd = _chdman_command(chd_path, output, interface)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError as error:
+        return f"Failed to run chdman: {error}"
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip().splitlines()
+        detail = err[-1] if err else f"exit {result.returncode}"
+        return f"chdman failed: {detail}"
+    return f"Extracted: {output}"
+
+
 def draw(
     screen: curses.window,
     rows: list[tuple[Node, int]],
@@ -523,7 +560,7 @@ def run(screen: curses.window, roots: list[Node], rom_index: dict[str, list[str]
     focus_mode = "tree"
     candidates: list[dict] = []
     candidate_selected = 0
-    disk_sha1: str | None = None
+    disk_interface: str | None = None
     while True:
         rows = visible_nodes(roots)
         selected = max(0, min(selected, len(rows) - 1))
@@ -543,11 +580,11 @@ def run(screen: curses.window, roots: list[Node], rom_index: dict[str, list[str]
                 node = rows[selected][0]
                 if rom_index is not None and node_property(node, "type") == "Disk":
                     candidates = build_candidates(node, rom_index)
-                    disk_sha1 = node_property(node, "sha1")
+                    disk_interface = node_property(node, "interface")
                     candidate_selected = 0
                     if candidates:
                         focus_mode = "detail"
-                        status = f"{len(candidates)} candidate(s). Enter: check sha1. Tab: back to tree."
+                        status = f"{len(candidates)} candidate(s). Enter: extract. Tab: back to tree."
                     else:
                         status = "No CHD candidates found."
                 else:
@@ -561,15 +598,13 @@ def run(screen: curses.window, roots: list[Node], rom_index: dict[str, list[str]
             elif key == curses.KEY_DOWN:
                 candidate_selected = min(len(candidates) - 1, candidate_selected + 1)
             elif key in (10, 13):
+                # Not a ROM checker: just extract. Success = chdman exited cleanly.
                 candidate = candidates[candidate_selected]
-                if not disk_sha1:
-                    candidate["sha1_result"] = "no sha1 declared (nodump)"
-                else:
-                    try:
-                        actual = sha1_of_file(Path(candidate["path"]))
-                        candidate["sha1_result"] = "OK" if actual == disk_sha1 else "mismatch"
-                    except OSError as error:
-                        candidate["sha1_result"] = f"error: {error}"
+                chd_path = Path(candidate["path"])
+                default_out = _default_extract_output(chd_path, disk_interface)
+                answer = prompt(screen, f"Output [{default_out}]: ").strip()
+                output = Path(answer) if answer else default_out
+                status = extract_chd(chd_path, output, disk_interface)
             continue
         if key == curses.KEY_UP:
             selected -= 1
