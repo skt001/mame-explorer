@@ -19,6 +19,7 @@ python mame_explorer.py read arcade <mame実行ファイル/パッケージ>
 python mame_explorer.py read softwarelist <hashディレクトリ または mameパッケージ>
 python mame_explorer.py read romdir <CHDを再帰探索するルート>
 python mame_explorer.py   # 引数なしでキャッシュを閲覧
+python mame_explorer.py chd   # CHD mode（romdir キャッシュ必須・実在 CHD がある枝だけ残す）
 ```
 
 指定した1つから、`-listxml` 実行と `hash/*.xml` 検出を内部で自動処理する。mame 実行ファイルの入手方法は問わない。
@@ -26,6 +27,8 @@ python mame_explorer.py   # 引数なしでキャッシュを閲覧
 実行ファイルと `hash` が別ツリーに分かれる配置は `find_hash_dir` が候補パスとして扱う。候補に無い配置でも、`*.xml` を含む `hash` という名前のディレクトリが探索対象配下にあれば再帰的に見つける。`hash` が見つからない場合、Software Lists ルート自体がツリーに出ない。
 
 アーカイブを指定した場合、展開先は指定ファイルと同じ階層の `.mame-explorer-cache` ディレクトリで、既に展開済みならそれを再利用する。
+
+`chd` は romdir キャッシュが無いとエラーで起動しない。実在する CHD に紐付く枝だけを残したビューになる。
 
 詳細なコマンド例は `python mame_explorer.py --usage` を参照。
 
