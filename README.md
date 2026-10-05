@@ -1,9 +1,9 @@
 # MAME Explorer
 
-**Status: Work in Progress**
 
-Keyboard-driven CUI that builds a browsable tree of MAME Arcade machines and Software Lists from XML only (`-listxml` and `hash/*.xml`).  
-Properties, search, and (planned) CHD verification / Extract are based on the logical model derived from those XMLs.
+Keyboard-driven CUI for browsing the logical structure defined by MAME `-listxml` and Software List XML (`hash/*.xml`). The XML is the source of truth for the tree, Properties, and search.
+
+MAME Explorer is an **XML/metadata reader and explorer**. It is not a ROM checker, CHD checker, ROM manager, or ROM-set management tool. It does not calculate or verify ROM/CHD hashes.
 
 Implementation: [`mame_explorer.py`](mame_explorer.py)  
 Design document: [`docs/design.md`](docs/design.md)  
@@ -15,9 +15,11 @@ Japanese README: [`README_jp.md`](README_jp.md)
 - Lazy loading of large listxml output
 - Properties panel for any node
 - Simple search over currently expanded (visible) nodes
-- Optional caches (`read arcade|softwarelist|romdir`) for faster re-open and real CHD candidate lookup (Tab on a Disk node)
-- **CHD mode** (`mame_explorer.py chd`): prune the tree to only branches that have a Disk present in the romdir cache
+- Optional caches (`read arcade|softwarelist|romdir`) for faster re-open
+- **CHD mode** (`mame_explorer.py chd`): use the romdir cache to prune the tree to branches whose XML-defined Disk name has a matching `.chd` file
 - Automatic detection of `mame` executable and `hash/` directory from a package path (executable, directory, or archive)
+
+The `romdir` cache records CHD file names and paths for Explorer-side filtering. It is not a ROM/CHD verification database.
 
 ## Requirements
 
@@ -37,7 +39,7 @@ python mame_explorer.py /path/to/mame-directory-or-archive
 # Cache mode (recommended for repeated use)
 python mame_explorer.py read arcade /path/to/mame
 python mame_explorer.py read softwarelist /path/to/mame   # or path to hash/
-python mame_explorer.py read romdir /path/to/chd/root     # optional, for real CHD checks
+python mame_explorer.py read romdir /path/to/chd/root     # optional, for CHD-aware tree filtering
 python mame_explorer.py                                   # browse the caches
 python mame_explorer.py chd                               # CHD mode (requires romdir cache)
 ```
@@ -53,16 +55,20 @@ See `python mame_explorer.py --usage` for copy-pasteable examples.
 | ← | Collapse |
 | P | Toggle properties panel |
 | / | Search (visible nodes only) |
-| Tab | On a Disk node (with romdir cache): show CHD candidates / check SHA-1 |
+| Tab | On a Disk node (with romdir cache): show matching CHD file candidates |
 | Q | Quit |
 
-## Notes
+## Scope
 
-- Full `-listxml` output is large (hundreds of MB). The first run can take a while.
-- Tested primarily with MAME 0.285 (Ubuntu packages). Other versions / layouts are untested.
-- Extract (CHD → image) and richer search / mediaKind handling are planned but not yet implemented.
-- Real ROM/CHD files are never required for browsing the tree; they are used only for optional verification (and future Extract).
-- `chd` mode requires a prior `read romdir` and exits with an error if the romdir cache is missing.
+MAME Explorer reads and presents MAME metadata. In particular:
+
+- The logical tree comes from MAME `-listxml` and Software List XML.
+- XML-defined attributes such as `name`, `sha1`, `status`, and `writeable` are displayed as metadata when present.
+- The application does **not** independently verify those hashes against ROM or CHD files.
+- Real ROM/CHD files are not treated as the source of truth for the logical model.
+- `romdir` is an optional filesystem index used by CHD mode to filter the Explorer view by matching CHD filenames.
+- MAME Explorer does not copy, organize, repair, validate, or manage ROM sets.
+
 
 ## License
 

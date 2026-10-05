@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import curses
-import hashlib
 import json
 import os
 import shutil
@@ -126,16 +125,6 @@ def run_listxml(executable: Path) -> ET.Element:
     return parse_listxml(fetch_listxml(executable))
 
 
-# --- Real CHD verification (romdir cache; on-demand only, see run()) -----
-
-def sha1_of_file(path: Path) -> str:
-    hasher = hashlib.sha1()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-
 # --- XML -> logical tree -------------------------------------------------
 
 def element_properties(element: ET.Element, node_type: str) -> list[tuple[str, str]]:
@@ -233,9 +222,53 @@ def machine_node(machine: ET.Element, rom_index: dict[str, list[str]] | None = N
     return Node(label, element_properties(machine, "Arcade Game"), load)
 
 
+def _progress(label: str, current: int, total: int) -> None:
+    print(f"\r{label} {current}/{total}", end="", flush=True)
+
+
+def _finish_progress() -> None:
+    print()
+
+
+def _build_machine_nodes(
+    machines: list[ET.Element],
+    rom_index: dict[str, list[str]] | None = None,
+) -> list[Node]:
+    total = len(machines)
+    result: list[Node] = []
+    for current, machine in enumerate(machines, 1):
+        result.append(machine_node(machine, rom_index))
+        if current == total or current % 500 == 0:
+            _progress("Loading Arcade...", current, total)
+    _finish_progress()
+    return result
+
+
+def _build_software_list_nodes(files: list[Path]) -> list[Node]:
+    total = len(files)
+    result: list[Node] = []
+    for current, path in enumerate(files, 1):
+        result.append(software_list_node(path))
+        if current == total or current % 25 == 0:
+            _progress("Loading Software Lists...", current, total)
+    _finish_progress()
+    return result
+
+
+def preload_root_nodes(roots: list[Node]) -> None:
+    """Load only the top-level Arcade / Software Lists nodes before curses starts."""
+    for node in roots:
+        if node.label not in {"Arcade", "Software Lists"} or node.loaded:
+            continue
+        print(f"Loading {node.label}...")
+        node.load()
+        count = len(node.children)
+        print(f"{node.label} ready: {count}")
+
+
 def build_roots(package: Package) -> list[Node]:
     def load_arcade() -> list[Node]:
-        return [machine_node(machine) for machine in run_listxml(package.executable).findall("machine")]
+        return _build_machine_nodes(run_listxml(package.executable).findall("machine"))
 
     roots = [Node("Arcade", [("type", "MAME listxml"), ("path", str(package.executable))], load_arcade)]
 
@@ -244,7 +277,7 @@ def build_roots(package: Package) -> list[Node]:
         roots.append(Node(
             "Software Lists",
             [("type", "Software List directory"), ("path", str(package.hash_dir)), ("files", str(len(files)))],
-            lambda: [software_list_node(path) for path in files],
+            lambda: _build_software_list_nodes(files),
         ))
     return roots
 
@@ -319,7 +352,7 @@ def build_roots_from_cache(cache_dir: Path) -> list[Node]:
 
         def load_arcade() -> list[Node]:
             root = parse_listxml(arcade_xml.read_text())
-            return [machine_node(machine) for machine in root.findall("machine")]
+            return _build_machine_nodes(root.findall("machine"))
 
         properties = [("type", "MAME listxml (cached)")] + [(k, str(v)) for k, v in meta.items()]
         roots.append(Node("Arcade", properties, load_arcade))
@@ -370,11 +403,12 @@ def build_roots_chd_mode(cache_dir: Path, rom_index: dict[str, list[str]]) -> li
 
         def load_arcade() -> list[Node]:
             root = parse_listxml(arcade_xml.read_text())
-            return [
-                machine_node(machine, rom_index)
+            machines = [
+                machine
                 for machine in root.findall("machine")
                 if _machine_has_matching_disk(machine, rom_index)
             ]
+            return _build_machine_nodes(machines, rom_index)
 
         properties = [
             ("type", "MAME listxml (cached, CHD mode)"),
@@ -390,30 +424,36 @@ def build_roots_chd_mode(cache_dir: Path, rom_index: dict[str, list[str]]) -> li
 
         def load_software_lists() -> list[Node]:
             result: list[Node] = []
-            for path in files:
+            total = len(files)
+            for current, path in enumerate(files, 1):
                 try:
                     root = ET.parse(path).getroot()
                 except ET.ParseError:
+                    if current == total or current % 25 == 0:
+                        _progress("Loading Software Lists...", current, total)
                     continue
                 if root.tag != "softwarelist":
+                    if current == total or current % 25 == 0:
+                        _progress("Loading Software Lists...", current, total)
                     continue
                 matching = [
                     software_node(software, rom_index)
                     for software in root.findall("software")
                     if _software_has_matching_disk(software, rom_index)
                 ]
-                if not matching:
-                    continue
-                label = root.get("description") or root.get("name") or path.name
-                properties = element_properties(root, "Software List") + [
-                    ("path", str(path)),
-                    ("filter", "only software with a Disk present in romdir cache"),
-                ]
-                # Pre-loaded children so the list itself is already filtered
-                node = Node(label, properties)
-                node.children = matching
-                node.loaded = True
-                result.append(node)
+                if matching:
+                    label = root.get("description") or root.get("name") or path.name
+                    properties = element_properties(root, "Software List") + [
+                        ("path", str(path)),
+                        ("filter", "only software with a Disk present in romdir cache"),
+                    ]
+                    node = Node(label, properties)
+                    node.children = matching
+                    node.loaded = True
+                    result.append(node)
+                if current == total or current % 25 == 0:
+                    _progress("Loading Software Lists...", current, total)
+            _finish_progress()
             return result
 
         properties = [
@@ -458,7 +498,7 @@ def build_candidates(node: Node, rom_index: dict[str, list[str]]) -> list[dict]:
         except OSError:
             size = None
             mtime = None
-        candidates.append({"path": path_str, "size": size, "mtime": mtime, "sha1_result": None})
+        candidates.append({"path": path_str, "size": size, "mtime": mtime})
     return candidates
 
 
@@ -528,8 +568,7 @@ def draw(
             screen.addnstr(1, left_width + 2, f"{len(candidates)} CHD candidate(s):", width - left_width - 3)
             for row, candidate in enumerate(candidates[: height - 3], 2):
                 index = row - 2
-                result = candidate["sha1_result"] or "not checked"
-                text = f"{candidate['path']}  size={candidate['size']}  mtime={candidate['mtime']}  sha1={result}"
+                text = f"{candidate['path']}  size={candidate['size']}  mtime={candidate['mtime']}"
                 attribute = curses.A_REVERSE if focus_mode == "detail" and index == candidate_selected else curses.A_NORMAL
                 screen.addnstr(row, left_width + 2, text, width - left_width - 3, attribute)
         else:
@@ -591,6 +630,10 @@ def run(screen: curses.window, roots: list[Node], rom_index: dict[str, list[str]
                     status = "Not a Disk node, or no romdir cache loaded."
             else:
                 focus_mode = "tree"
+                candidates = []
+                candidate_selected = 0
+                disk_interface = None
+                status = "Select a node."
             continue
         if focus_mode == "detail":
             if key == curses.KEY_UP:
@@ -720,6 +763,7 @@ def main_chd(args: list[str]) -> None:
         )
         return
 
+    preload_root_nodes(roots)
     curses.wrapper(run, roots, rom_index)
 
 
@@ -743,8 +787,8 @@ def main_browse(args: list[str]) -> None:
             "  mame_explorer.py chd             (CHD mode: only branches with a Disk\n"
             "                                   present in the romdir cache)\n"
             "\n"
-            "'read romdir' adds real ROM/CHD verification (press Tab on a Disk node),\n"
-            "which is not available when running with <package> directly.\n"
+            "'read romdir' indexes CHD filenames for CHD mode and candidate display (press Tab on a Disk node).\n"
+            "It does not verify ROM/CHD contents or hashes.\n"
             "'chd' requires the romdir cache and prunes the tree to matching branches only.\n"
         ),
         epilog="Run 'mame_explorer.py --usage' for copy-pasteable command examples.",
@@ -773,6 +817,7 @@ def main_browse(args: list[str]) -> None:
             parser.error("No cached data found. Run 'mame-explorer read arcade|softwarelist|romdir <path>' first.")
             return
 
+    preload_root_nodes(roots)
     curses.wrapper(run, roots, rom_index)
 
 
