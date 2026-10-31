@@ -648,6 +648,11 @@ def run(screen: curses.window, roots: list[Node], rom_index: dict[str, list[str]
                 answer = prompt(screen, f"Output [{default_out}]: ").strip()
                 output = Path(answer) if answer else default_out
                 status = extract_chd(chd_path, output, disk_interface)
+                if status.startswith("Extracted: "):
+                    focus_mode = "tree"
+                    candidates = []
+                    candidate_selected = 0
+                    disk_interface = None
             continue
         if key == curses.KEY_UP:
             selected -= 1
